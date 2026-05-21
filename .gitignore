@@ -1,0 +1,53 @@
+# ── Python ──────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# ── Virtual environments ────────────────────────────────────────────────
+venv/
+env/
+.venv/
+.env
+
+# ── IDE / Editor ────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Project runtime files ───────────────────────────────────────────────
+temp/
+*.log
+debug_no_add_button.png
+debug_page.html
+bili_video_*.json
+
+# ── Sensitive config (contains secrets, DO NOT commit) ──────────────────
+config/config.yaml
+config/deepseek_auth.json
+jd_cookies.json
+
+# ── Environment variables ───────────────────────────────────────────────
+.env
+
+# ── Build output copies at project root ─────────────────────────────────
+Video2Shop_v*.exe
+
+# ── OS misc ─────────────────────────────────────────────────────────────
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# ── Test cache ──────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── PyInstaller ─────────────────────────────────────────────────────────
+*.spec

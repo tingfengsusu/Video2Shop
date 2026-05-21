@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Video2Shop — 设置</title>
+<style>
+    :root {
+        --bg: #f5f5f5;
+        --card-bg: #ffffff;
+        --text: #333;
+        --sub: #888;
+        --accent: #e4393c;
+        --accent-hover: #c1272d;
+        --border: #e0e0e0;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                     "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+        padding: 20px;
+    }
+    .navbar {
+        max-width: 800px;
+        margin: 0 auto 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .navbar h1 { font-size: 22px; }
+    .navbar a {
+        color: var(--accent);
+        text-decoration: none;
+        font-size: 14px;
+        padding: 6px 16px;
+        border: 1px solid var(--accent);
+        border-radius: 4px;
+        transition: all .15s;
+    }
+    .navbar a:hover { background: var(--accent); color: #fff; }
+    .card {
+        max-width: 800px;
+        margin: 0 auto 20px;
+        background: var(--card-bg);
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    }
+    .card h2 {
+        font-size: 18px;
+        margin-bottom: 20px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--border);
+    }
+    .form-group {
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .form-group label {
+        flex: 0 0 200px;
+        font-size: 14px;
+        color: var(--text);
+        text-align: right;
+    }
+    .form-group input[type="text"],
+    .form-group input[type="number"],
+    .form-group select {
+        flex: 1;
+        padding: 8px 12px;
+        font-size: 14px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        outline: none;
+        max-width: 320px;
+    }
+    .form-group input:focus,
+    .form-group select:focus {
+        border-color: var(--accent);
+    }
+    .form-group input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        accent-color: var(--accent);
+    }
+    .form-group .hint {
+        font-size: 12px;
+        color: var(--sub);
+        margin-left: 8px;
+    }
+    .actions {
+        display: flex;
+        gap: 12px;
+        justify-content: flex-end;
+        margin-top: 24px;
+        padding-top: 16px;
+        border-top: 1px solid var(--border);
+    }
+    .btn {
+        padding: 10px 24px;
+        font-size: 14px;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: background .2s;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-outline { background: #fff; color: var(--accent); border: 1px solid var(--accent); }
+    .btn-outline:hover { background: #fff5f5; }
+    .btn-warn { background: #fff; color: #faad14; border: 1px solid #faad14; }
+    .btn-warn:hover { background: #fffbe6; }
+    .toast {
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 10px 24px;
+        border-radius: 6px;
+        font-size: 14px;
+        z-index: 999;
+        opacity: 0;
+        transition: opacity .3s;
+        pointer-events: none;
+    }
+    .toast.show { opacity: 1; }
+    .toast.success { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
+    .toast.error { background: #fff2f0; color: #ff4d4f; border: 1px solid #ffccc7; }
+</style>
+</head>
+<body>
+
+<div class="navbar">
+    <h1>设置</h1>
+    <a href="/">← 返回首页</a>
+</div>
+
+<div class="card">
+    <h2>DeepSeek 网页版</h2>
+    <div class="form-group">
+        <label>回复超时 (秒)</label>
+        <input type="number" id="deepseek_web.timeout_seconds" min="30" max="600" value="120">
+        <span class="hint">等待 AI 回复的最大秒数</span>
+    </div>
+    <div class="form-group">
+        <label>每批图片数</label>
+        <input type="number" id="deepseek_web.batch_size" min="1" max="10" value="5">
+        <span class="hint">每批上传图片数（受 DeepSeek 限制）</span>
+    </div>
+    <div class="form-group">
+        <label>无头模式</label>
+        <input type="checkbox" id="deepseek_web.headless">
+        <span class="hint">不显示浏览器窗口</span>
+    </div>
+</div>
+
+<div class="card">
+    <h2>OCR 配置</h2>
+    <div class="form-group">
+        <label>最少中文字符数</label>
+        <input type="number" id="ocr.min_chinese_chars" min="5" max="100" value="25">
+        <span class="hint">低于此值的帧将被丢弃</span>
+    </div>
+    <div class="form-group">
+        <label>OCR 设备</label>
+        <select id="ocr.easyocr_device">
+            <option value="cpu">CPU</option>
+            <option value="cuda">CUDA (GPU)</option>
+        </select>
+        <span class="hint">使用 CPU 或 GPU 进行文字识别</span>
+    </div>
+</div>
+
+<div class="card">
+    <h2>京东购物</h2>
+    <div class="form-group">
+        <label>Chrome 路径</label>
+        <input type="text" id="shopping.chrome_path" placeholder="留空则自动查找">
+        <span class="hint">可执行文件完整路径</span>
+    </div>
+    <div class="form-group">
+        <label>加购后延迟 (秒)</label>
+        <input type="number" id="shopping.add_cart_delay" min="0.1" max="5" step="0.1" value="0.5">
+        <span class="hint">点击加购按钮后等待时间</span>
+    </div>
+    <div class="form-group">
+        <label>搜索后等待 (秒)</label>
+        <input type="number" id="shopping.search_wait_after" min="0" max="5" step="0.1" value="1.0">
+        <span class="hint">搜索完成后等待渲染的时间</span>
+    </div>
+    <div class="form-group">
+        <label>点击重试次数</label>
+        <input type="number" id="shopping.click_retry" min="0" max="5" value="1">
+        <span class="hint">加购按钮点击失败后的重试次数</span>
+    </div>
+    <div class="form-group">
+        <label>失败时刷新重试</label>
+        <input type="checkbox" id="shopping.retry_on_failure">
+        <span class="hint">加购失败后刷新页面再试一次</span>
+    </div>
+</div>
+
+<div class="card">
+    <h2>视频处理</h2>
+    <div class="form-group">
+        <label>抽帧间隔 (秒)</label>
+        <input type="number" id="video.frame_interval" min="1" max="30" value="5">
+        <span class="hint">每隔多少秒抽取一帧</span>
+    </div>
+    <div class="form-group">
+        <label>最大抽帧数</label>
+        <input type="number" id="video.max_frames" min="3" max="50" value="20">
+        <span class="hint">限制 API 调用成本</span>
+    </div>
+</div>
+
+<div class="actions">
+    <button class="btn btn-warn" onclick="resetConfig()">恢复默认</button>
+    <button class="btn btn-primary" onclick="saveConfig()">保存</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+async function loadConfig() {
+    try {
+        const resp = await fetch("/api/config");
+        const data = await resp.json();
+        if (data.status === "ok") {
+            populateForm(data.config);
+        }
+    } catch (e) {
+        showToast("加载配置失败: " + e, "error");
+    }
+}
+
+function populateForm(cfg) {
+    const keys = [
+        "deepseek_web.timeout_seconds",
+        "deepseek_web.batch_size",
+        "deepseek_web.headless",
+        "ocr.min_chinese_chars",
+        "ocr.easyocr_device",
+        "shopping.chrome_path",
+        "shopping.add_cart_delay",
+        "shopping.search_wait_after",
+        "shopping.click_retry",
+        "shopping.retry_on_failure",
+        "video.frame_interval",
+        "video.max_frames",
+    ];
+
+    keys.forEach(key => {
+        const el = document.getElementById(key);
+        if (!el) return;
+        const parts = key.split(".");
+        let val = cfg;
+        for (const p of parts) {
+            if (val && typeof val === "object") val = val[p];
+            else { val = undefined; break; }
+        }
+
+        if (el.type === "checkbox") {
+            el.checked = !!val;
+        } else if (el.tagName === "SELECT") {
+            el.value = val || "";
+        } else {
+            el.value = val ?? "";
+        }
+    });
+}
+
+function collectForm() {
+    const keys = [
+        "deepseek_web.timeout_seconds",
+        "deepseek_web.batch_size",
+        "deepseek_web.headless",
+        "ocr.min_chinese_chars",
+        "ocr.easyocr_device",
+        "shopping.chrome_path",
+        "shopping.add_cart_delay",
+        "shopping.search_wait_after",
+        "shopping.click_retry",
+        "shopping.retry_on_failure",
+        "video.frame_interval",
+        "video.max_frames",
+    ];
+
+    const data = {};
+    keys.forEach(key => {
+        const el = document.getElementById(key);
+        if (!el) return;
+        let val;
+        if (el.type === "checkbox") {
+            val = el.checked;
+        } else if (el.type === "number") {
+            val = el.value === "" ? "" : parseFloat(el.value);
+            if (el.step === "1" || !el.step) val = parseInt(el.value, 10);
+            if (isNaN(val)) val = "";
+        } else {
+            val = el.value;
+        }
+        data[key] = val;
+    });
+    return data;
+}
+
+async function saveConfig() {
+    const data = collectForm();
+    try {
+        const resp = await fetch("/api/config", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(data)
+        });
+        const result = await resp.json();
+        if (result.status === "ok") {
+            showToast("配置已保存", "success");
+        } else {
+            showToast("保存失败: " + (result.message || ""), "error");
+        }
+    } catch (e) {
+        showToast("请求失败: " + e, "error");
+    }
+}
+
+async function resetConfig() {
+    if (!confirm("确定要恢复所有设置为默认值吗？当前配置将被覆盖。")) return;
+    try {
+        const resp = await fetch("/api/config/reset", {method: "POST"});
+        const result = await resp.json();
+        if (result.status === "ok") {
+            populateForm(result.config);
+            showToast("已恢复默认配置", "success");
+        } else {
+            showToast("恢复失败: " + (result.message || ""), "error");
+        }
+    } catch (e) {
+        showToast("请求失败: " + e, "error");
+    }
+}
+
+function showToast(msg, type) {
+    const toast = document.getElementById("toast");
+    toast.textContent = msg;
+    toast.className = "toast " + type + " show";
+    setTimeout(() => toast.classList.remove("show"), 2500);
+}
+
+document.addEventListener("DOMContentLoaded", loadConfig);
+</script>
+</body>
+</html>

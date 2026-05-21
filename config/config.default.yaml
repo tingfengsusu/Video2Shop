@@ -1,0 +1,60 @@
+# ============================================================
+# B站视频配方自动提取 + 京东购物车助手 — 默认配置文件
+# 此文件作为恢复默认设置时的备份，请勿手动编辑。
+# 运行 web_app.py 后可在 /settings 页面在线修改配置。
+# ============================================================
+
+# DeepSeek API 配置
+deepseek:
+  api_key: ""                               # 留空则从环境变量 DEEPSEEK_API_KEY 读取
+  base_url: "https://api.deepseek.com"
+  model: "deepseek-chat"
+  max_tokens: 2000
+  temperature: 0.1
+
+# 视频处理配置
+video:
+  download_dir: "./temp/videos"             # 视频下载临时目录
+  frames_dir: "./temp/frames"               # 抽帧临时目录
+  frame_interval: 5                         # 固定抽帧间隔（秒）
+  use_scene_detection: true                 # 是否使用场景检测抽帧
+  max_frames: 20                            # 最大抽帧数
+  keep_temp_files: false                    # 是否保留临时文件
+
+# OCR 配置
+ocr:
+  min_chinese_chars: 25                     # 最少中文字符数
+  languages: ["ch_sim", "en"]               # easyocr 识别语言
+  easyocr_device: "cpu"                     # OCR 设备: cpu / cuda
+
+# DeepSeek 网页版配置
+deepseek_web:
+  headless: false                           # 无头模式
+  timeout_seconds: 120                      # 单次回复超时（秒）
+  cookies_file: "config/deepseek_auth.json"        # 登录态缓存文件
+  batch_size: 5                             # 每批最多上传图片数
+
+# GUI 配置
+gui:
+  log_level: "INFO"                         # 日志级别: DEBUG / INFO / WARNING / ERROR
+
+# Web 服务配置
+web:
+  host: "127.0.0.1"
+  port: 5000
+  auto_open_browser: true
+
+# 购物平台配置
+shopping:
+  platform: jd                              # jd / taobao
+  debug_port: 9222                          # Chrome 远程调试端口
+  auto_launch: true                         # 连接失败时自动启动 Chrome
+  close_browser_on_exit: false              # 退出时是否关闭 Chrome
+  search_timeout: 10000                     # 搜索超时（毫秒）
+  add_cart_retry: 2                         # 加购失败重试次数
+  add_cart_delay: 0.5                       # 点击加购后延迟（秒）
+  click_retry: 1                            # 加购按钮点击重试次数
+  search_wait_after: 1.0                    # 搜索后等待渲染（秒）
+  retry_on_failure: true                    # 失败时刷新页面重试
+  chrome_browser_type: "Google Chrome"       # Google Chrome / Microsoft Edge / Chromium / 自定义路径
+  chrome_path: ""                           # Chrome 路径（仅 browser_type="自定义路径" 时有效）

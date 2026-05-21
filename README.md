@@ -1,0 +1,198 @@
+# 🎬 Video2Shop
+
+**B站视频 → AI 配方提取 → 京东一键加购**
+
+从 B站美食/手工视频中自动提取配方（食材 + 工具），勾选已有物品后在京东一键加购缺失的部分。
+
+<p align="center">
+  <img src="docs/screenshot.png" alt="截图" width="800">
+  <br>
+  <em>↑ 演示截图 — 替换为实际截图</em>
+</p>
+
+---
+
+## ✨ 功能特性
+
+- 🎥 **智能视频分析** — 输入 B站视频链接，自动下载 → 关键帧抽取 → OCR 文字筛选
+- 🤖 **AI 配方提取** — 多帧图片上传 DeepSeek，提取完整食材清单和工具列表
+- ✅ **已有物品勾选** — 可视化复选框界面，标记你已拥有的物品
+- 🛒 **一键京东加购** — 播放器 CDP 连接复用登录态，自动搜索自营商品并加入购物车
+- 🖥️ **三种使用方式** — 命令行 / 桌面 GUI / Web 前端，共享同一套后端管道
+- ⚙️ **在线配置** — GUI 内置设置面板，修改即时生效，无需手动编辑 YAML
+- 📦 **单文件打包** — PyInstaller 打包为单个 .exe，无需安装 Python 环境
+
+---
+
+## 🚀 快速开始
+
+### 方式 A：直接运行打包好的 EXE（推荐）
+
+1. 从 [Releases](../../releases) 下载 `Video2Shop.exe`
+2. 确保系统已安装 **Google Chrome**（京东加购需要）
+3. 双击运行 `Video2Shop.exe`
+
+首次运行会自动创建 `config.yaml` 配置文件。
+
+### 方式 B：从源码运行
+
+```bash
+# 1. 克隆仓库
+git clone https://github.com/your-username/Video2Shop.git
+cd Video2Shop
+
+# 2. 安装依赖
+pip install -r requirements.txt
+pip install ttkbootstrap          # GUI 美化主题（可选）
+
+# 3. 安装 Playwright 浏览器（DeepSeek 网页版需要）
+playwright install chromium
+
+# 4. 启动
+python src/gui.py                     # 桌面 GUI
+# python src/main.py --url BV1xxx     # 命令行
+# python src/web_app.py               # Web 前端 (http://127.0.0.1:5000)
+```
+
+---
+
+## 🔧 配置文件
+
+首次运行时自动从 `config.default.yaml` 生成 `config.yaml`。也可以通过 GUI 的「设置」面板在线修改。
+
+| 配置项 | 说明 | 默认值 |
+|--------|------|--------|
+| `shopping.chrome_browser_type` | 浏览器类型 | `Google Chrome` |
+| `shopping.chrome_path` | 自定义浏览器路径 | (空) |
+| `shopping.add_cart_delay` | 加购后延迟(秒) | `0.5` |
+| `shopping.click_retry` | 加购按钮点击重试 | `1` |
+| `video.frame_interval` | 视频抽帧间隔(秒) | `5` |
+| `video.max_frames` | 最大抽帧数 | `20` |
+| `ocr.min_chinese_chars` | 最少中文字符数 | `25` |
+| `deepseek_web.timeout_seconds` | AI 回复超时(秒) | `120` |
+| `deepseek_web.batch_size` | 每批上传图片数 | `5` |
+| `gui.log_level` | GUI 日志级别 | `INFO` |
+
+完整配置项请查看 [`config/config.default.yaml`](config/config.default.yaml)。
+
+---
+
+## 🏗️ 项目结构
+
+```
+Video2Shop/
+├── src/                           # Python source code
+│   ├── gui.py                     # Desktop GUI entry (Tkinter + ttkbootstrap)
+│   ├── main.py                    # CLI entry
+│   ├── web_app.py                 # Web frontend entry (Flask)
+│   ├── pipeline.py                # Shared backend pipeline
+│   ├── video_processor.py         # Video download + frame extraction + OCR
+│   ├── deepseek_web_analyzer.py   # DeepSeek web multi-image analysis
+│   ├── recipe_extractor.py        # DeepSeek API text recipe extraction
+│   ├── shopping_platform.py       # JD shopping cart automation (Playwright CDP)
+│   ├── web_interface.py           # Web recipe display + cart interface
+│   └── bili_downloader.py         # Bilibili video downloader
+├── config/                        # Configuration files
+│   ├── config.default.yaml        # Default config template
+│   └── config.yaml                # Runtime config (gitignored)
+├── resources/                     # Static resources
+│   └── templates/                 # Web frontend HTML templates
+├── scripts/                       # Helper scripts
+│   └── build.bat                  # PyInstaller build script
+├── temp/                          # Temporary files (gitignored)
+├── tests/                         # Unit tests
+├── requirements.txt               # Python dependencies
+├── requirements-gui.txt           # GUI extra dependencies
+├── .gitignore
+└── README.md
+```
+
+---
+
+## 📦 打包
+
+运行 `scripts\build.bat` 即可打包为单文件 EXE：
+
+```batch
+scripts\build.bat
+```
+
+如果终端显示乱码（某些 Windows 终端代码页不兼容），可以用 PowerShell 执行：
+
+```powershell
+powershell -Command "& { .\scripts\build.bat }"
+```
+
+---
+
+## ❓ 常见问题 (FAQ)
+
+<details>
+<summary><b>Q: 提示"未找到 Chrome"怎么办？</b></summary>
+
+确认系统已安装 Google Chrome。也可以在设置中切换为 Microsoft Edge 或 Chromium，或选择「自定义路径」手动指定浏览器 exe 位置。
+</details>
+
+<details>
+<summary><b>Q: 京东加购成功率低？</b></summary>
+
+尝试增大 `add_cart_delay`（例如 1.0 秒）和 `click_retry`（例如 2）。京东页面结构会不定期更新，如持续失败请提 Issue。
+</details>
+
+<details>
+<summary><b>Q: 视频抽不到文字帧？</b></summary>
+
+降低 `ocr.min_chinese_chars`（例如 10），或减小 `video.frame_interval`（例如 3 秒）。也可以尝试用 `--json` 参数从评论数据提取。
+</details>
+
+<details>
+<summary><b>Q: DeepSeek 网页版需要登录？</b></summary>
+
+首次运行时会弹出浏览器窗口，请在窗口中扫码或账号登录 DeepSeek。登录态会缓存到 `config/deepseek_auth.json`，后续无需重复登录。
+</details>
+
+<details>
+<summary><b>Q: 打包后的 EXE 体积很大？</b></summary>
+
+主要因为 easyocr 模型文件 (~200MB) 和 Playwright 浏览器。可以考虑使用 `--onedir` 模式代替 `--onefile`，或排除 easyocr 改用 PaddleOCR/RapidOCR。
+</details>
+
+---
+
+## 🛠️ 技术栈
+
+| 层级 | 技术 |
+|------|------|
+| GUI 框架 | Tkinter + [ttkbootstrap](https://github.com/israel-dryer/ttkbootstrap) (litera 主题) |
+| Web 框架 | Flask + Jinja2 |
+| 浏览器自动化 | [Playwright](https://playwright.dev/) (CDP 模式) |
+| AI 分析 | DeepSeek (网页版 + API) |
+| OCR | [EasyOCR](https://github.com/JaidedAI/EasyOCR) |
+| 视频处理 | OpenCV + static-ffmpeg |
+| 打包 | PyInstaller |
+| 配置 | YAML |
+
+---
+
+## 📄 许可证
+
+本项目基于 [MIT License](LICENSE) 开源。
+
+---
+
+## 🤝 贡献
+
+欢迎提交 Issue 和 Pull Request。
+
+1. Fork 本仓库
+2. 创建特性分支 (`git checkout -b feature/amazing-feature`)
+3. 提交更改 (`git commit -m 'Add amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 创建 Pull Request
+
+---
+
+## 📮 联系方式
+
+- Issue: [GitHub Issues](../../issues)
+- 开发者: [@tingfengsusu](https://github.com/tingfengsusu)

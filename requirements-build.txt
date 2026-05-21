@@ -1,0 +1,6 @@
+# Video2Shop — build dependencies only
+# Install: pip install -r requirements-build.txt
+#
+# These are NOT needed at runtime, only for packaging.
+
+pyinstaller>=6.0

@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Video2Shop — 视频配方提取</title>
+<style>
+    :root {
+        --bg: #f5f5f5;
+        --card-bg: #ffffff;
+        --text: #333;
+        --sub: #888;
+        --accent: #e4393c;
+        --accent-hover: #c1272d;
+        --border: #e0e0e0;
+        --log-bg: #1e1e1e;
+        --log-text: #d4d4d4;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                     "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+        padding: 20px;
+    }
+    .navbar {
+        max-width: 960px;
+        margin: 0 auto 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .navbar h1 { font-size: 22px; }
+    .navbar a {
+        color: var(--accent);
+        text-decoration: none;
+        font-size: 14px;
+        padding: 6px 16px;
+        border: 1px solid var(--accent);
+        border-radius: 4px;
+        transition: all .15s;
+    }
+    .navbar a:hover { background: var(--accent); color: #fff; }
+    .card {
+        max-width: 960px;
+        margin: 0 auto 20px;
+        background: var(--card-bg);
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    }
+    .card h2 { font-size: 18px; margin-bottom: 16px; }
+    .input-row {
+        display: flex;
+        gap: 12px;
+    }
+    .input-row input {
+        flex: 1;
+        padding: 12px 16px;
+        font-size: 15px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        outline: none;
+        transition: border-color .2s;
+    }
+    .input-row input:focus { border-color: var(--accent); }
+    .btn {
+        padding: 12px 28px;
+        font-size: 15px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        white-space: nowrap;
+        transition: background .2s;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
+    .btn-outline { background: #fff; color: var(--accent); border: 1px solid var(--accent); }
+    .btn-outline:hover { background: #fff5f5; }
+    .hint {
+        margin-top: 12px;
+        font-size: 13px;
+        color: var(--sub);
+    }
+    .hint code { background: #f0f0f0; padding: 1px 6px; border-radius: 3px; }
+    .status-bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+        font-size: 14px;
+    }
+    .status-dot {
+        width: 10px; height: 10px;
+        border-radius: 50%;
+        background: #ccc;
+        flex-shrink: 0;
+    }
+    .status-dot.running { background: #faad14; animation: pulse 1.2s infinite; }
+    .status-dot.done { background: #52c41a; }
+    .status-dot.failed { background: #ff4d4f; }
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: .4; }
+    }
+    .log-container {
+        background: var(--log-bg);
+        color: var(--log-text);
+        border-radius: 8px;
+        padding: 16px;
+        font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+        font-size: 13px;
+        line-height: 1.6;
+        max-height: 480px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-break: break-all;
+    }
+    .log-container:empty::after {
+        content: "等待任务启动...";
+        color: #666;
+    }
+    .result-link {
+        margin-top: 16px;
+        padding: 12px 16px;
+        background: #f6ffed;
+        border: 1px solid #b7eb8f;
+        border-radius: 8px;
+        font-size: 14px;
+        display: none;
+    }
+    .result-link.show { display: block; }
+    .result-link a { color: var(--accent); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="navbar">
+    <h1>Video2Shop</h1>
+    <a href="/settings">设置</a>
+</div>
+
+<div class="card">
+    <h2>开始提取</h2>
+    <div class="input-row">
+        <input
+            type="text" id="url-input"
+            placeholder="输入 B站视频链接或 BV 号，例如 https://www.bilibili.com/video/BV1xxx"
+            autofocus
+        >
+        <button class="btn btn-primary" id="btn-start" onclick="startTask()">开始提取</button>
+        <button class="btn btn-outline" id="btn-stop" onclick="stopTask()" style="display:none">停止</button>
+    </div>
+    <div class="hint">
+        支持格式：完整链接 <code>https://www.bilibili.com/video/BV...</code> 或纯 BV 号 <code>BV1xxx</code>
+    </div>
+</div>
+
+<div class="card" id="log-card" style="display:none">
+    <div class="status-bar">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">就绪</span>
+    </div>
+    <div class="log-container" id="log-container"></div>
+    <div class="result-link" id="result-link">
+        配方与购物车界面已就绪：
+        <a id="result-anchor" href="#" target="_blank">打开配方界面</a>
+    </div>
+</div>
+
+<script>
+let taskId = null;
+let logOffset = 0;
+let pollTimer = null;
+let webPort = null;
+
+function $(id) { return document.getElementById(id); }
+
+async function startTask() {
+    const url = $("url-input").value.trim();
+    if (!url) { alert("请输入 B站视频 URL"); return; }
+
+    const btn = $("btn-start");
+    btn.disabled = true;
+    btn.textContent = "启动中...";
+
+    try {
+        const resp = await fetch("/api/start", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({url: url})
+        });
+        const data = await resp.json();
+
+        if (data.status === "ok") {
+            taskId = data.task_id;
+            logOffset = 0;
+            $("log-card").style.display = "";
+            $("log-container").textContent = "";
+            $("status-dot").className = "status-dot running";
+            $("status-text").textContent = "运行中...";
+            $("btn-start").textContent = "运行中...";
+            $("btn-stop").style.display = "";
+            $("result-link").classList.remove("show");
+
+            pollTimer = setInterval(pollLogs, 1000);
+            pollLogs(); // 立即拉取一次
+        } else {
+            alert("启动失败: " + (data.message || "未知错误"));
+            resetUI();
+        }
+    } catch (e) {
+        alert("请求失败: " + e);
+        resetUI();
+    }
+}
+
+async function stopTask() {
+    if (!taskId) return;
+    try {
+        await fetch("/api/stop/" + taskId, {method: "POST"});
+    } catch(e) {}
+    clearInterval(pollTimer);
+    $("status-dot").className = "status-dot failed";
+    $("status-text").textContent = "已停止";
+    resetUI();
+}
+
+async function pollLogs() {
+    if (!taskId) return;
+    try {
+        const resp = await fetch("/api/logs/" + taskId + "?offset=" + logOffset);
+        const data = await resp.json();
+
+        if (data.not_found) {
+            clearInterval(pollTimer);
+            return;
+        }
+
+        if (data.logs) {
+            const container = $("log-container");
+            container.textContent += data.logs;
+            container.scrollTop = container.scrollHeight;
+            logOffset = data.offset;
+        }
+
+        if (data.done) {
+            clearInterval(pollTimer);
+            const dot = $("status-dot");
+            if (data.status === "done") {
+                dot.className = "status-dot done";
+                $("status-text").textContent = "成功完成 (退出码 " + (data.exit_code || 0) + ")";
+            } else {
+                dot.className = "status-dot failed";
+                $("status-text").textContent = "任务失败 (退出码 " + (data.exit_code || 1) + ")";
+            }
+            resetUI();
+
+            // 显示配方界面链接
+            if (data.web_port) {
+                webPort = data.web_port;
+                const anchor = $("result-anchor");
+                anchor.href = "http://127.0.0.1:" + data.web_port;
+                anchor.textContent = "打开配方与购物车界面 (端口 " + data.web_port + ")";
+                $("result-link").classList.add("show");
+            }
+        }
+    } catch(e) {}
+}
+
+function resetUI() {
+    const btn = $("btn-start");
+    btn.disabled = false;
+    btn.textContent = "开始提取";
+    $("btn-stop").style.display = "none";
+}
+
+// Enter 键启动
+$("url-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") startTask();
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+# Video2Shop GUI 依赖
+# pip install -r requirements-gui.txt
+
+ttkbootstrap>=1.10.0     # 现代 UI 主题 (litera/flatly)
+pyyaml>=6.0               # YAML 配置文件读写
+playwright>=1.40.0        # DeepSeek 网页版 + 京东自动化
+
+# 以下为 pipeline 依赖 (gui.py 通过 import 间接使用)
+opencv-python>=4.8.0
+numpy>=1.24.0
+easyocr>=1.7.0
+Pillow>=10.0.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+static-ffmpeg>=2.0
