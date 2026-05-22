@@ -250,7 +250,6 @@ pyinstaller ^
     --hidden-import=recipe_extractor ^
     --hidden-import=bili_downloader ^
     --hidden-import=ttkbootstrap ^
-    --hidden-import=static_ffmpeg ^
     --collect-all=easyocr ^
     --collect-all=ttkbootstrap ^
     --exclude-module=flask ^

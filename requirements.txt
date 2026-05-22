@@ -6,7 +6,6 @@ requests>=2.31.0
 pyyaml>=6.0
 python-dotenv>=1.0.0
 playwright>=1.40.0
-static-ffmpeg>=2.0
 
 # Web 前端 (python web_app.py)
 flask>=3.0.0

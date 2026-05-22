@@ -57,11 +57,18 @@ except ImportError:
 # ── 常量 ──────────────────────────────────────────────────────────────────
 
 if getattr(sys, "frozen", False):
-    PROJECT_DIR = Path(sys._MEIPASS)
+    # Frozen (exe) mode:
+    #   RESOURCES_DIR  = PyInstaller temp dir (read-only, holds bundled assets)
+    #   WRITABLE_DIR   = directory next to the exe (writable, holds config.yaml)
+    RESOURCES_DIR = Path(sys._MEIPASS)
+    WRITABLE_DIR  = Path(sys.executable).resolve().parent
 else:
-    PROJECT_DIR = Path(__file__).resolve().parent.parent
-CONFIG_PATH = PROJECT_DIR / "config" / "config.yaml"
-DEFAULT_CONFIG_PATH = PROJECT_DIR / "config" / "config.default.yaml"
+    # Dev mode: everything relative to the project root
+    RESOURCES_DIR = Path(__file__).resolve().parent.parent
+    WRITABLE_DIR  = RESOURCES_DIR
+
+CONFIG_PATH = WRITABLE_DIR / "config" / "config.yaml"
+DEFAULT_CONFIG_PATH = RESOURCES_DIR / "config" / "config.default.yaml"
 
 SECTION_LABELS = {
     "deepseek_web": "DeepSeek 网页版",
@@ -100,12 +107,17 @@ SETTINGS_FIELDS = [
 
 def _read_config() -> dict:
     if not CONFIG_PATH.exists():
-        return {}
+        # Auto-init: copy default template if config doesn't exist yet
+        if DEFAULT_CONFIG_PATH.exists():
+            _reset_config()
+        else:
+            return {}
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
 
 def _write_config(data: dict):
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         yaml.dump(data, f, allow_unicode=True, default_flow_style=False,
                   sort_keys=False)
@@ -114,8 +126,10 @@ def _write_config(data: dict):
 
 
 def _reset_config():
-    if DEFAULT_CONFIG_PATH.exists():
-        shutil.copy(DEFAULT_CONFIG_PATH, CONFIG_PATH)
+    if not DEFAULT_CONFIG_PATH.exists():
+        return
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(DEFAULT_CONFIG_PATH, CONFIG_PATH)
 
 
 def _get_nested(d: dict, keys: list):
