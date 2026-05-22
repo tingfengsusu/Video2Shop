@@ -20,19 +20,23 @@
 - 🛒 **一键京东加购** — 播放器 CDP 连接复用登录态，自动搜索自营商品并加入购物车
 - 🖥️ **三种使用方式** — 命令行 / 桌面 GUI / Web 前端，共享同一套后端管道
 - ⚙️ **在线配置** — GUI 内置设置面板，修改即时生效，无需手动编辑 YAML
-- 📦 **单文件打包** — PyInstaller 打包为单个 .exe，无需安装 Python 环境
+- 📦 **开箱即用** — 内置 ffmpeg，解压即用，无需安装任何系统依赖
+- 🚀 **首次自动初始化** — EasyOCR 模型首次运行时自动下载（~100MB），后续启动无需等待
 
 ---
 
 ## 🚀 快速开始
 
-### 方式 A：直接运行打包好的 EXE（推荐）
+### 方式 A：下载打包好的版本（推荐）
 
-1. 从 [Releases](../../releases) 下载 `Video2Shop.exe`
-2. 确保系统已安装 **Google Chrome**（京东加购需要）
-3. 双击运行 `Video2Shop.exe`
+1. 从 [Releases](../../releases) 下载 `Video2Shop_vX.Y.Z.zip`
+2. 解压到任意目录
+3. 确保系统已安装 **Google Chrome**（京东加购需要）
+4. 双击运行 `Video2Shop/Video2Shop.exe`
 
-首次运行会自动创建 `config.yaml` 配置文件。
+首次运行会：
+- 自动创建 `config.yaml` 配置文件
+- 自动下载 EasyOCR 中文识别模型到 `~/.EasyOCR/`（约 100MB，仅首次）
 
 ### 方式 B：从源码运行
 
@@ -48,7 +52,12 @@ pip install ttkbootstrap          # GUI 美化主题（可选）
 # 3. 安装 Playwright 浏览器（DeepSeek 网页版需要）
 playwright install chromium
 
-# 4. 启动
+# 4. 下载 ffmpeg（DASH 音视频合并需要）
+#    从 https://www.gyan.dev/ffmpeg/builds/ 下载 ffmpeg-release-essentials.zip
+#    解压后将 ffmpeg.exe 放入 tools/ 目录
+#    使用打包好的版本则无需此步骤
+
+# 5. 启动
 python src/gui.py                     # 桌面 GUI
 # python src/main.py --url BV1xxx     # 命令行
 # python src/web_app.py               # Web 前端 (http://127.0.0.1:5000)
@@ -91,14 +100,20 @@ Video2Shop/
 │   ├── recipe_extractor.py        # DeepSeek API text recipe extraction
 │   ├── shopping_platform.py       # JD shopping cart automation (Playwright CDP)
 │   ├── web_interface.py           # Web recipe display + cart interface
-│   └── bili_downloader.py         # Bilibili video downloader
+│   ├── bili_downloader.py         # Bilibili video downloader (durl + DASH/ffmpeg)
+│   └── utils.py                   # Shared utilities (ffmpeg path resolver)
 ├── config/                        # Configuration files
 │   ├── config.default.yaml        # Default config template
 │   └── config.yaml                # Runtime config (gitignored)
 ├── resources/                     # Static resources
 │   └── templates/                 # Web frontend HTML templates
 ├── scripts/                       # Helper scripts
-│   └── build.bat                  # PyInstaller build script
+│   ├── build.bat                  # PyInstaller build script (onedir + UPX)
+│   ├── build.py                   # Cross-platform build script
+│   └── setup.iss                  # Inno Setup installer config
+├── tools/                         # Bundled executables
+│   ├── .gitkeep
+│   └── ffmpeg.exe                 # (gitignored, download separately)
 ├── temp/                          # Temporary files (gitignored)
 ├── tests/                         # Unit tests
 ├── requirements.txt               # Python dependencies
@@ -111,17 +126,41 @@ Video2Shop/
 
 ## 📦 打包
 
-运行 `scripts\build.bat` 即可打包为单文件 EXE：
+### 快速打包
 
 ```batch
 scripts\build.bat
 ```
 
-如果终端显示乱码（某些 Windows 终端代码页不兼容），可以用 PowerShell 执行：
+或跨平台：
 
-```powershell
-powershell -Command "& { .\scripts\build.bat }"
+```bash
+python scripts/build.py
+python auto_build.py
 ```
+
+### 打包流程
+
+| 步骤 | 说明 |
+|------|------|
+| `--onedir` | 生成 `dist/Video2Shop/` 文件夹，启动无需解压 |
+| UPX 压缩 | 自动检测 `upx.exe`（PATH 或 `tools/`），有则启用 |
+| EasyOCR 模型 | **不打包**（~200MB），首次运行时自动下载到 `~/.EasyOCR/` |
+| ffmpeg | 通过 `--add-data` 打包到 `tools/`，冻结后用 `get_ffmpeg_path()` 定位 |
+| 排除项 | 排除 flask/jinja2/werkzeug 等 Web 依赖，减少体积 |
+| 输出 | `dist/Video2Shop/` → 自动打包为 `Video2Shop_v{x.y.z}.zip` |
+
+### 构建安装包（Inno Setup）
+
+1. 安装 [Inno Setup](https://jrsoftware.org/isinfo.php)
+2. 运行构建脚本生成 `dist/Video2Shop/`
+3. 编译安装包：
+
+```batch
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" scripts\setup.iss
+```
+
+生成 `Video2Shop_Setup_v{x.y.z}.exe`，支持开始菜单快捷方式、桌面图标。
 
 ---
 
@@ -152,9 +191,15 @@ powershell -Command "& { .\scripts\build.bat }"
 </details>
 
 <details>
-<summary><b>Q: 打包后的 EXE 体积很大？</b></summary>
+<summary><b>Q: 首次启动很慢？</b></summary>
 
-主要因为 easyocr 模型文件 (~200MB) 和 Playwright 浏览器。可以考虑使用 `--onedir` 模式代替 `--onefile`，或排除 easyocr 改用 PaddleOCR/RapidOCR。
+首次运行时 EasyOCR 会自动下载中文识别模型（约 100MB）到 `~/.EasyOCR/`，下载完成后后续启动即可秒开。如果网络不畅，可以手动下载模型文件放到该目录。
+</details>
+
+<details>
+<summary><b>Q: 打包后程序启动报错找不到 ffmpeg？</b></summary>
+
+开发环境请确保 `tools/ffmpeg.exe` 存在（从 https://www.gyan.dev/ffmpeg/builds/ 下载）。打包版本已内置，不需要手动安装。
 </details>
 
 ---
@@ -164,12 +209,12 @@ powershell -Command "& { .\scripts\build.bat }"
 | 层级 | 技术 |
 |------|------|
 | GUI 框架 | Tkinter + [ttkbootstrap](https://github.com/israel-dryer/ttkbootstrap) (litera 主题) |
-| Web 框架 | Flask + Jinja2 |
+| Web 框架 | Flask + Jinja2 (打包时排除，仅源码运行使用) |
 | 浏览器自动化 | [Playwright](https://playwright.dev/) (CDP 模式) |
 | AI 分析 | DeepSeek (网页版 + API) |
 | OCR | [EasyOCR](https://github.com/JaidedAI/EasyOCR) |
-| 视频处理 | OpenCV + static-ffmpeg |
-| 打包 | PyInstaller |
+| 视频处理 | OpenCV + ffmpeg (DASH 音视频合并) |
+| 打包 | PyInstaller (onedir + UPX) + Inno Setup |
 | 配置 | YAML |
 
 ---

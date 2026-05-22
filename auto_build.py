@@ -2,16 +2,17 @@
 """
 Video2Shop — One-Click Auto Build Script
 =========================================
-Double-click to build Video2Shop.exe with zero manual steps.
+Double-click to build Video2Shop with zero manual steps.
 
 What it does:
   1. Reads version from src/version.py
   2. Checks / installs PyInstaller
-  3. Cleans old build artifacts
-  4. Runs PyInstaller (same params as scripts/build.bat)
-  5. Verifies dist/Video2Shop.exe
-  6. Copies to root as Video2Shop_v{version}.exe
-  7. Prints a friendly success / failure summary
+  3. Auto-downloads UPX for compression
+  4. Cleans old build artifacts
+  5. Runs PyInstaller (--onedir, no bundled EasyOCR models)
+  6. Verifies dist/Video2Shop/Video2Shop.exe
+  7. Zips the onedir folder for distribution
+  8. Prints a friendly success / failure summary
 
 Usage:
     python auto_build.py           # build
@@ -24,6 +25,7 @@ import re
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 
@@ -31,7 +33,8 @@ from pathlib import Path
 
 SCRIPT_DIR  = Path(__file__).resolve().parent
 VERSION_FILE = SCRIPT_DIR / "src" / "version.py"
-EXE_SOURCE   = SCRIPT_DIR / "dist" / "Video2Shop.exe"
+DIST_DIR     = SCRIPT_DIR / "dist" / "Video2Shop"
+EXE_SOURCE   = DIST_DIR / "Video2Shop.exe"
 
 # PyInstaller parameters — keep in sync with scripts/build.bat
 ENTRY_POINT      = "src" + os.sep + "gui.py"
@@ -42,11 +45,12 @@ HIDDEN_IMPORTS = [
     "playwright", "playwright.sync_api", "requests",
     "pipeline", "video_processor", "deepseek_web_analyzer",
     "shopping_platform", "web_interface", "recipe_extractor",
-    "bili_downloader", "ttkbootstrap", "static_ffmpeg",
-    "version",
+    "bili_downloader", "ttkbootstrap", "version",
 ]
 
-COLLECT_ALL = ["easyocr", "ttkbootstrap"]
+# Only collect-all for ttkbootstrap (themes are small).
+# easyocr models (~200MB) are NOT bundled — they auto-download to ~/.EasyOCR on first run.
+COLLECT_ALL = ["ttkbootstrap"]
 
 EXCLUDE_MODULES = [
     "flask", "jinja2", "werkzeug", "markupsafe",
@@ -57,9 +61,12 @@ EXCLUDE_MODULES = [
 ADD_DATA = [
     ("config" + os.sep + "config.default.yaml", "config"),
     ("resources" + os.sep + "templates", "resources" + os.sep + "templates"),
+    ("tools" + os.sep + "ffmpeg.exe", "tools"),
 ]
 
 MIN_PYTHON = (3, 8)
+UPX_VERSION = "4.2.4"
+UPX_URL = f"https://github.com/upx/upx/releases/download/v{UPX_VERSION}/upx-{UPX_VERSION}-win64.zip"
 
 
 # ── ANSI color helpers (no external deps) ─────────────────────────────────
@@ -75,7 +82,6 @@ class Style:
 
     @staticmethod
     def _enable():
-        # Disable colors if piped or on old Windows without ANSI support
         if not sys.stdout.isatty():
             return False
         if sys.platform == "win32":
@@ -87,7 +93,7 @@ class Style:
                 pass
         return True
 
-    _ON = _enable.__func__()  # call once at import time
+    _ON = _enable.__func__()
 
     @classmethod
     def _apply(cls, code: str, text: str) -> str:
@@ -134,7 +140,6 @@ def print_info(text: str):
 
 
 def confirm_exit():
-    """Pause before exit so the user can read output (double-click friendly)."""
     print()
     try:
         input("Press Enter to exit...")
@@ -143,12 +148,70 @@ def confirm_exit():
 
 
 def fmt_size(bytes_: int) -> str:
-    """Human-readable file size."""
     for unit in ("B", "KB", "MB", "GB"):
         if bytes_ < 1024:
             return f"{bytes_:.1f} {unit}"
         bytes_ /= 1024
     return f"{bytes_:.1f} TB"
+
+
+def dir_size(path: Path) -> int:
+    """Total size of all files in a directory tree."""
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+
+
+# ── UPX ────────────────────────────────────────────────────────────────────
+
+def find_upx() -> Path | None:
+    """Look for upx.exe on PATH or in tools/."""
+    which = shutil.which("upx")
+    if which:
+        return Path(which)
+    local = SCRIPT_DIR / "tools" / "upx.exe"
+    if local.exists():
+        return local
+    return None
+
+
+def ensure_upx() -> Path | None:
+    """Ensure UPX is available. Download to tools/ if missing."""
+    print_header("Checking UPX")
+
+    existing = find_upx()
+    if existing:
+        print_ok(f"UPX found: {existing}")
+        return existing
+
+    print_info("UPX not found, downloading...")
+    tools_dir = SCRIPT_DIR / "tools"
+    tools_dir.mkdir(exist_ok=True)
+
+    zip_path = tools_dir / "upx.zip"
+    upx_exe = tools_dir / "upx.exe"
+
+    try:
+        import urllib.request
+        print_info(f"Downloading {UPX_URL}")
+        urllib.request.urlretrieve(UPX_URL, zip_path)
+
+        import zipfile
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            # UPX zip contains: upx-4.2.4-win64/upx.exe
+            for name in zf.namelist():
+                if name.endswith("upx.exe"):
+                    with zf.open(name) as src, open(upx_exe, "wb") as dst:
+                        shutil.copyfileobj(src, dst)
+                    break
+
+        zip_path.unlink()  # clean up zip
+        print_ok(f"UPX installed to {upx_exe}")
+        return upx_exe
+
+    except Exception as e:
+        print_warn(f"UPX download failed ({e}), building without compression")
+        if zip_path.exists():
+            zip_path.unlink()
+        return None
 
 
 # ── Steps ──────────────────────────────────────────────────────────────────
@@ -208,7 +271,7 @@ def clean_artifacts():
             print(f"  Removed {name}/")
             removed += 1
 
-    for pat in ("Video2Shop_v*.exe", "*.spec"):
+    for pat in ("Video2Shop_v*.zip", "Video2Shop_v*.exe", "*.spec"):
         for f in SCRIPT_DIR.glob(pat):
             f.unlink()
             print(f"  Removed {f.name}")
@@ -218,16 +281,20 @@ def clean_artifacts():
         print("  Nothing to clean")
 
 
-def run_pyinstaller() -> bool:
+def run_pyinstaller(upx_path: Path | None) -> bool:
     print_header("Running PyInstaller")
     print(f"  Entry: {ENTRY_POINT}")
+    print(f"  Mode:  --onedir")
 
     cmd = [
         sys.executable, "-m", "PyInstaller",
-        "--onefile",
+        "--onedir",
         "--noconsole",
         f"--name={OUTPUT_NAME}",
     ]
+
+    if upx_path:
+        cmd.append(f"--upx-dir={upx_path.parent}")
 
     for src, dst in ADD_DATA:
         cmd.append(f"--add-data={src}{os.pathsep}{dst}")
@@ -261,22 +328,27 @@ def verify_output() -> bool:
     if not EXE_SOURCE.exists():
         print_err(f"{EXE_SOURCE} was not generated")
         return False
-    size = EXE_SOURCE.stat().st_size
-    print_ok(f"dist/Video2Shop.exe  ({fmt_size(size)})")
+    size = dir_size(DIST_DIR)
+    print_ok(f"dist/Video2Shop/  ({fmt_size(size)})")
     return True
 
 
-def copy_to_root(version: str) -> bool:
-    print_header("Copying to project root")
-    dest_name = f"Video2Shop_v{version}.exe"
+def zip_dist(version: str) -> bool:
+    print_header("Creating distribution zip")
+    dest_name = f"Video2Shop_v{version}.zip"
     dest = SCRIPT_DIR / dest_name
+
     try:
-        shutil.copy2(EXE_SOURCE, dest)
+        with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as zf:
+            for file in DIST_DIR.rglob("*"):
+                if file.is_file():
+                    arcname = f"Video2Shop/{file.relative_to(DIST_DIR)}"
+                    zf.write(file, arcname)
         size = dest.stat().st_size
         print_ok(f"{dest_name}  ({fmt_size(size)})")
         return True
     except OSError as e:
-        print_err(f"Copy failed: {e}")
+        print_err(f"Zip failed: {e}")
         return False
 
 
@@ -297,7 +369,7 @@ def cleanup_work_files():
 
 
 def print_success(version: str):
-    dest_name = f"Video2Shop_v{version}.exe"
+    dest_name = f"Video2Shop_v{version}.zip"
     dest_path = SCRIPT_DIR / dest_name
     size = fmt_size(dest_path.stat().st_size) if dest_path.exists() else "?"
 
@@ -307,10 +379,11 @@ def print_success(version: str):
     print(Style.bold("=" * 60))
     print()
     print(f"  Version:   {version}")
-    print(f"  Output:    dist/Video2Shop.exe")
-    print(f"  Root copy: {dest_name}  ({size})")
+    print(f"  Output:    dist/Video2Shop/")
+    print(f"  Zip:       {dest_name}  ({size})")
     print()
-    print(f"  {Style.dim('Next: see RELEASE.md for publishing instructions')}")
+    print(f"  {Style.dim('EasyOCR models will download on first run (~100MB).')}")
+    print(f"  {Style.dim('For installer build, see: scripts/setup.iss')}")
 
 
 def print_failure():
@@ -329,7 +402,6 @@ def print_failure():
 # ── Main ───────────────────────────────────────────────────────────────────
 
 def main():
-    # Ensure we're at the project root
     os.chdir(SCRIPT_DIR)
 
     print()
@@ -340,16 +412,13 @@ def main():
     clean_only = "--clean" in sys.argv
     keep_work = "--keep" in sys.argv
 
-    # 1. Python version check
     if not check_python():
         print_failure()
         confirm_exit()
         sys.exit(1)
 
-    # 2. Read version
     version = read_version()
 
-    # --clean mode: just clean and exit
     if clean_only:
         clean_artifacts()
         print()
@@ -357,35 +426,30 @@ def main():
         confirm_exit()
         return
 
-    # 3. PyInstaller
     if not ensure_pyinstaller():
         print_failure()
         confirm_exit()
         sys.exit(1)
 
-    # 4. Clean
+    upx_path = ensure_upx()
+
     clean_artifacts()
 
-    # 5. Build
-    if not run_pyinstaller():
+    if not run_pyinstaller(upx_path):
         print_failure()
         confirm_exit()
         sys.exit(1)
 
-    # 6. Verify
     if not verify_output():
         print_failure()
         confirm_exit()
         sys.exit(1)
 
-    # 7. Copy to root
-    copy_to_root(version)
+    zip_dist(version)
 
-    # 8. Clean work files (unless --keep)
     if not keep_work:
         cleanup_work_files()
 
-    # Done
     print_success(version)
     confirm_exit()
 

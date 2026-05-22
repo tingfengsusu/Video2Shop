@@ -2,15 +2,18 @@
 setlocal enabledelayedexpansion
 
 REM ================================================================
-REM  Video2Shop ¡ª PyInstaller Build Script
+REM  Video2Shop â€” PyInstaller Build Script
 REM
 REM  Usage:
 REM    scripts\build.bat              (uses version from src\version.py)
 REM    scripts\build.bat 1.0.1        (overrides version)
 REM
 REM  Output:
-REM    dist\Video2Shop.exe
-REM    Video2Shop_v<version>.exe      (copied to project root)
+REM    dist\Video2Shop\               (onedir folder)
+REM    Video2Shop_v<version>.zip      (zipped for distribution)
+REM
+REM  Note: EasyOCR models (~100MB) are NOT bundled.
+REM        They auto-download to ~/.EasyOCR on first run.
 REM ================================================================
 
 REM Step 0: change to project root (this script lives in scripts/)
@@ -18,7 +21,7 @@ cd /d "%~dp0.."
 set PROJECT_ROOT=%cd%
 
 echo ============================================================
-echo   Video2Shop ¡ª PyInstaller Build
+echo   Video2Shop â€” PyInstaller Build
 echo ============================================================
 echo.
 
@@ -42,7 +45,7 @@ echo.
 REM ---- check pyinstaller ----------------------------------------
 pip show pyinstaller >nul 2>&1
 if !errorlevel! neq 0 (
-    echo [1/5] Installing pyinstaller...
+    echo [1/6] Installing pyinstaller...
     pip install pyinstaller
     if !errorlevel! neq 0 (
         echo [ERROR] Failed to install pyinstaller.
@@ -51,22 +54,46 @@ if !errorlevel! neq 0 (
     )
 )
 
+REM ---- check UPX ------------------------------------------------
+echo [1/6] Checking UPX...
+set UPX_DIR=
+where upx >nul 2>&1
+if !errorlevel! equ 0 (
+    for /f "delims=" %%i in ('where upx') do set UPX_DIR=%%~dpi
+    echo   UPX found: !UPX_DIR!
+) else if exist "tools\upx.exe" (
+    set UPX_DIR=%PROJECT_ROOT%\tools
+    echo   UPX found: tools\upx.exe
+) else (
+    echo   UPX not found â€” build without compression.
+    echo   To enable: download upx.exe from https://upx.github.io/ and put it in tools\ or PATH.
+)
+
 REM ---- clean old artifacts --------------------------------------
-echo [1/5] Cleaning old build artifacts...
+echo [2/6] Cleaning old build artifacts...
 if exist build rmdir /s /q build
 if exist dist  rmdir /s /q dist
+if exist "Video2Shop_v*.zip" del /q "Video2Shop_v*.zip" 2>nul
 if exist "Video2Shop_v*.exe" del /q "Video2Shop_v*.exe" 2>nul
 echo   Done.
 
 REM ---- run pyinstaller ------------------------------------------
-echo [2/5] Running PyInstaller...
+echo [3/6] Running PyInstaller (--onedir)...
+
+if not "!UPX_DIR!"=="" (
+    set UPX_FLAG=--upx-dir="!UPX_DIR!"
+) else (
+    set UPX_FLAG=
+)
 
 pyinstaller ^
-    --onefile ^
+    --onedir ^
     --noconsole ^
     --name="Video2Shop" ^
+    !UPX_FLAG! ^
     --add-data="config\config.default.yaml;config" ^
     --add-data="resources\templates;resources\templates" ^
+    --add-data="tools\ffmpeg.exe;tools" ^
     --hidden-import=yaml ^
     --hidden-import=PIL ^
     --hidden-import=PIL.Image ^
@@ -84,9 +111,7 @@ pyinstaller ^
     --hidden-import=recipe_extractor ^
     --hidden-import=bili_downloader ^
     --hidden-import=ttkbootstrap ^
-    --hidden-import=static_ffmpeg ^
     --hidden-import=version ^
-    --collect-all=easyocr ^
     --collect-all=ttkbootstrap ^
     --exclude-module=flask ^
     --exclude-module=jinja2 ^
@@ -113,29 +138,29 @@ if !errorlevel! neq 0 (
 )
 
 REM ---- verify output --------------------------------------------
-echo [3/5] Verifying output...
-if not exist "dist\Video2Shop.exe" (
-    echo [ERROR] dist\Video2Shop.exe was not generated.
+echo [4/6] Verifying output...
+if not exist "dist\Video2Shop\Video2Shop.exe" (
+    echo [ERROR] dist\Video2Shop\Video2Shop.exe was not generated.
     pause
     exit /b 1
 )
 
-for %%A in ("dist\Video2Shop.exe") do set EXE_SIZE=%%~zA
+for %%A in ("dist\Video2Shop\Video2Shop.exe") do set EXE_SIZE=%%~zA
 set /a EXE_SIZE_MB=!EXE_SIZE! / 1048576
-echo   OK: dist\Video2Shop.exe (!EXE_SIZE_MB! MB)
+echo   OK: dist\Video2Shop\Video2Shop.exe (!EXE_SIZE_MB! MB)
 
-REM ---- copy to root with version stamp --------------------------
-echo [4/5] Copying EXE to project root...
-set OUTPUT_NAME=Video2Shop_v!APP_VERSION!.exe
-copy /y "dist\Video2Shop.exe" "!OUTPUT_NAME!" >nul
+REM ---- zip for distribution -------------------------------------
+echo [5/6] Creating distribution zip...
+set ZIP_NAME=Video2Shop_v!APP_VERSION!.zip
+powershell -Command "Compress-Archive -Path 'dist\Video2Shop\*' -DestinationPath '!ZIP_NAME!' -Force"
 if !errorlevel! equ 0 (
-    echo   Copied: !OUTPUT_NAME!
+    echo   Created: !ZIP_NAME!
 ) else (
-    echo [WARN] Could not copy to root.
+    echo [WARN] Could not create zip.
 )
 
 REM ---- clean pyinstaller work files -----------------------------
-echo [5/5] Cleaning PyInstaller work files...
+echo [6/6] Cleaning PyInstaller work files...
 if exist build rmdir /s /q build
 if exist "Video2Shop.spec" del /q "Video2Shop.spec" 2>nul
 echo   Done.
@@ -147,12 +172,10 @@ echo   Build complete!
 echo ============================================================
 echo.
 echo   Version:  !APP_VERSION!
-echo   Output:   dist\Video2Shop.exe
-echo   Copy:     !OUTPUT_NAME!
+echo   Output:   dist\Video2Shop\
+echo   Zip:      !ZIP_NAME!
 echo.
-echo   Next steps:
-echo     1. Test the EXE in a clean environment
-echo     2. Check for missing resources at runtime
-echo     3. Follow RELEASE.md to publish to GitHub
+echo   Note: EasyOCR models (~100MB) will download on first run.
+echo   For installer build, see: scripts\setup.iss
 echo.
 pause

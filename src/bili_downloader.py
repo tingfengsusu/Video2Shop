@@ -1,12 +1,12 @@
 """
-B站视频下载器 — 直接调用 B站 API，无需 yt-dlp / 系统级 ffmpeg。
+B站视频下载器 — 直接调用 B站 API，无需 yt-dlp / ffmpeg。
 
 技术流程（参考 DownKyi 实现思路）：
   1. 从 URL 提取 BV 号
   2. 调用 pagelist API → 获取 cid
   3. 调用 playurl API → 获取 durl (预合并分段) 或 dash (分离音视频)
   4. 分段下载 + 断点续传
-  5. 本地合并: durl 模式直接二进制拼接; dash 模式用 static-ffmpeg 合并
+  5. durl 模式直接二进制拼接; dash 模式只下载视频流（无需音频，抽帧不需要）
 
 使用示例:
     from bili_downloader import BiliDownloader
@@ -28,6 +28,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import requests
+
+from utils import get_ffmpeg_path
 
 logger = logging.getLogger(__name__)
 
@@ -344,151 +346,6 @@ class SegmentDownloader:
         return f"{size:.1f}TB"
 
 
-# ── ffmpeg 查找 (static-ffmpeg 内置静态编译版) ─────────────────────────────
-
-def _find_ffmpeg() -> str:
-    """使用 static-ffmpeg 获取 ffmpeg 路径（无需系统安装）。
-
-    static-ffmpeg 在 pip install 时自动下载对应平台的静态编译版 ffmpeg，
-    不依赖系统 PATH 或外部下载。
-    """
-    import shutil as _shutil
-
-    import static_ffmpeg
-
-    static_ffmpeg.add_paths()
-    ffmpeg = _shutil.which("ffmpeg") or _shutil.which("ffmpeg.exe")
-    if not ffmpeg:
-        raise RuntimeError("static-ffmpeg 未能提供 ffmpeg 二进制，请执行: pip install static-ffmpeg")
-    logger.info(f"使用 static-ffmpeg 内置 ffmpeg: {ffmpeg}")
-    return ffmpeg
-
-
-def _kill_ffmpeg_processes():
-    """终止所有残留的 ffmpeg 进程（Windows / Linux）。"""
-    import platform
-
-    try:
-        if platform.system() == "Windows":
-            subprocess.run(
-                ["taskkill", "/f", "/im", "ffmpeg.exe"],
-                capture_output=True,
-                timeout=10,
-            )
-        else:
-            subprocess.run(
-                ["pkill", "-9", "-f", "ffmpeg"],
-                capture_output=True,
-                timeout=10,
-            )
-    except Exception:
-        pass
-
-
-def _merge_dash_av(
-    video_path: Path,
-    audio_path: Path,
-    output_path: Path,
-) -> Path:
-    """合并 DASH 分离的音视频流 → 单个 MP4。
-
-    使用 static-ffmpeg 内置的 ffmpeg 做无损 remux（不重新编码，-c copy）。
-    video.m4s 和 audio.m4s 均为 MP4 容器，直接 copy 流即可。
-
-    健壮性：
-      - timeout=60s 防止 ffmpeg 卡死
-      - -nostdin 阻止交互式提示阻塞
-      - 超时后自动终止 ffmpeg 进程
-      - 失败时尝试二进制拼接回退（best-effort）
-    """
-    ffmpeg = _find_ffmpeg()
-
-    cmd = [
-        ffmpeg,
-        "-nostdin",              # 禁止从 stdin 读取，防止交互式阻塞
-        "-i", str(video_path),
-        "-i", str(audio_path),
-        "-c", "copy",
-        "-movflags", "+faststart",
-        "-y",                    # 覆盖输出文件不询问
-        str(output_path),
-    ]
-    logger.info(f"合并音视频: {' '.join(cmd)}")
-
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=60,
-        )
-
-        stderr_text = result.stderr.strip()
-        if stderr_text:
-            logger.debug(f"ffmpeg stderr:\n{stderr_text[-800:]}")
-
-        if result.returncode != 0:
-            tail = stderr_text[-500:] if len(stderr_text) > 500 else stderr_text
-            logger.error(
-                f"ffmpeg 退出码={result.returncode}\n"
-                f"命令: {' '.join(cmd)}\n"
-                f"stderr: {tail}"
-            )
-            raise RuntimeError(
-                f"ffmpeg 合并失败 (exit code {result.returncode}):\n{tail}"
-            )
-
-        size_mb = output_path.stat().st_size / (1024 * 1024)
-        logger.info(f"AV 合并完成: {output_path.name} ({size_mb:.1f} MB)")
-        return output_path
-
-    except subprocess.TimeoutExpired:
-        logger.error(
-            f"ffmpeg 合并超时 (60s): {video_path.name} + {audio_path.name}\n"
-            f"命令: {' '.join(cmd)}"
-        )
-        _kill_ffmpeg_processes()
-
-        # 清除可能写了一半的输出文件
-        if output_path.exists():
-            try:
-                output_path.unlink()
-            except Exception:
-                pass
-
-        # 尝试二进制拼接回退
-        logger.warning("ffmpeg 超时，尝试二进制拼接回退...")
-        try:
-            return _binary_concat_av(video_path, audio_path, output_path)
-        except Exception as e:
-            logger.error(f"二进制拼接回退也失败: {e}")
-            raise RuntimeError(
-                f"ffmpeg 合并超时且二进制回退失败。\n"
-                f"  video: {video_path}\n"
-                f"  audio: {audio_path}"
-            )
-
-
-def _binary_concat_av(video_path: Path, audio_path: Path, output_path: Path) -> Path:
-    """回退方案：直接将音视频文件二进制拼接。
-
-    这是一种 best-effort 方案，对某些 MP4 片段流可能产生可播放文件。
-    拼接顺序：video 在前，audio 在后。
-    """
-    logger.info(f"二进制拼接: {video_path.name} + {audio_path.name} -> {output_path.name}")
-    with open(output_path, "wb") as out:
-        with open(video_path, "rb") as vf:
-            shutil.copyfileobj(vf, out)
-        with open(audio_path, "rb") as af:
-            shutil.copyfileobj(af, out)
-
-    size_mb = output_path.stat().st_size / (1024 * 1024)
-    logger.info(f"二进制拼接完成: {output_path.name} ({size_mb:.1f} MB)")
-    return output_path
-
-
 # ── 主下载器 ─────────────────────────────────────────────────────────────────
 
 class BiliDownloader:
@@ -524,14 +381,14 @@ class BiliDownloader:
         quality: int = 64,
         output_name: Optional[str] = None,
     ) -> Path:
-        """下载 B站 视频到本地 MP4。
+        """下载 B站 视频到本地。
 
         参数:
             url: B站视频链接（完整 URL 或 BV 号）
             quality: 画质代号 (64=720P, 80=1080P 等，见 QUALITY_MAP)
             output_name: 输出文件名（不含扩展名），默认用视频标题
 
-        返回: 本地 MP4 文件路径
+        返回: 本地视频文件路径 (.mp4 或 .m4s)
         """
         bvid = self._parse_bvid(url)
         logger.info(f"BV 号: {bvid}")
@@ -569,7 +426,7 @@ class BiliDownloader:
             return self._download_durl(durl_list, output_path, title)
 
         elif dash_data:
-            logger.info("durl 不可用，降级到 DASH 模式（需 ffmpeg 合并音视频）")
+            logger.info("durl 不可用，降级到 DASH 模式（仅视频流，无需音频）")
             return self._download_dash(
                 dash_data, output_path, title, quality
             )
@@ -668,48 +525,61 @@ class BiliDownloader:
         title: str,
         quality: int,
     ) -> Path:
-        """下载 DASH 分离音视频流并合并。"""
+        """下载 DASH 音视频流，用 ffmpeg 合并为 MP4。"""
         videos = dash_data.get("video", [])
         audios = dash_data.get("audio", [])
 
         if not videos:
             raise RuntimeError("DASH 数据中没有视频流")
-        if not audios:
-            raise RuntimeError("DASH 数据中没有音频流")
 
-        # 选第一个可用的视频/音频流
         video_info = videos[0]
-        audio_info = audios[0]
-
         video_url = video_info.get("baseUrl") or video_info.get("base_url")
-        audio_url = audio_info.get("baseUrl") or audio_info.get("base_url")
+        if not video_url:
+            raise RuntimeError("DASH 视频流 URL 缺失")
 
-        if not video_url or not audio_url:
-            raise RuntimeError("DASH 流 URL 缺失")
+        audio_url = None
+        if audios:
+            audio_info = audios[0]
+            audio_url = audio_info.get("baseUrl") or audio_info.get("base_url")
 
         task_id = hashlib.md5((title + "_dash").encode()).hexdigest()[:12]
         downloader = SegmentDownloader(self.checkpoint_dir, task_id)
 
         desc = QUALITY_MAP.get(quality, str(quality))
-        logger.info(f"DASH 下载 ({desc}): 视频 {video_info.get('codecs', '?')}, "
-                     f"音频 {audio_info.get('codecs', '?')}")
+        logger.info(f"DASH 下载 ({desc}): 视频 {video_info.get('codecs', '?')}")
 
-        # 并发? 顺序下载稳妥
         video_file = downloader.download_single(
             video_url, "video.m4s", session=self.api.session
         )
-        audio_file = downloader.download_single(
-            audio_url, "audio.m4s", session=self.api.session
-        )
 
-        # 合并
-        _merge_dash_av(video_file, audio_file, output_path)
-
-        size_mb = output_path.stat().st_size / (1024 * 1024)
-        logger.info(f"DASH 下载完成: {output_path} ({size_mb:.1f} MB)")
-
-        downloader.cleanup()
-        return output_path
+        if audio_url:
+            logger.info(f"DASH 下载: 音频 {audio_info.get('codecs', '?')}")
+            audio_file = downloader.download_single(
+                audio_url, "audio.m4s", session=self.api.session
+            )
+            logger.info(f"ffmpeg 合并音视频 → {output_path.name}")
+            ffmpeg_path = get_ffmpeg_path()
+            subprocess.run(
+                [
+                    ffmpeg_path, "-y",
+                    "-i", str(video_file),
+                    "-i", str(audio_file),
+                    "-c", "copy",
+                    str(output_path),
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            downloader.cleanup()
+            size_mb = output_path.stat().st_size / (1024 * 1024)
+            logger.info(f"DASH 下载完成: {output_path.name} ({size_mb:.1f} MB)")
+            return output_path
+        else:
+            size_mb = video_file.stat().st_size / (1024 * 1024)
+            logger.info(f"DASH 下载完成 (无音频流): {video_file.name} ({size_mb:.1f} MB)")
+            downloader.cleanup()
+            return video_file
 
 
 # ── 便捷函数 ─────────────────────────────────────────────────────────────────
@@ -730,7 +600,7 @@ def download_bili_video(
         quality: 画质 (64=720P, 80=1080P)
         prefer_durl: 优先使用免 ffmpeg 的 durl 模式
 
-    返回: 本地 MP4 文件路径
+    返回: 本地视频文件路径
     """
     dl = BiliDownloader(
         cookies_path=cookies_path,

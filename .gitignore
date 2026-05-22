@@ -36,8 +36,12 @@ jd_cookies.json
 # ── Environment variables ───────────────────────────────────────────────
 .env
 
+# ── Bundled tools (ffmpeg is too large to commit) ───────────────────────
+tools/ffmpeg.exe
+
 # ── Build output copies at project root ─────────────────────────────────
 Video2Shop_v*.exe
+Video2Shop_v*.zip
 
 # ── OS misc ─────────────────────────────────────────────────────────────
 Thumbs.db
