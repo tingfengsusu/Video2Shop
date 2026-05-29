@@ -164,13 +164,26 @@ def run_pipeline(
             max_frames = config.get("video", {}).get("max_frames", 5)
             logger.info(f"筛选出 {len(filtered_frames)} 帧，最多使用 {max_frames} 张")
 
-            # ── 步骤 2: DeepSeek 网页版配方提取 ────────────────────────
-            logger.info("步骤 2/2: DeepSeek 网页版配方提取")
+            # ── 步骤 2: 配方提取 (API 或网页版) ─────────────────────
+            analysis_mode = config.get("deepseek", {}).get("analysis_mode", "api")
 
-            from deepseek_web_analyzer import analyze_frames_with_deepseek_web
-            recipe = analyze_frames_with_deepseek_web(
-                filtered_frames, config=config, max_images=max_frames,
-            )
+            if analysis_mode == "web":
+                logger.info("步骤 2/2: DeepSeek 网页版配方提取")
+                from deepseek_web_analyzer import analyze_frames_with_deepseek_web
+                recipe = analyze_frames_with_deepseek_web(
+                    filtered_frames, config=config, max_images=max_frames,
+                )
+            else:
+                logger.info("步骤 2/2: DeepSeek API 配方提取")
+                from recipe_extractor import RecipeExtractor
+                try:
+                    extractor = RecipeExtractor(config)
+                except ValueError as e:
+                    processor.cleanup_all()
+                    return _fail(str(e))
+                recipe = extractor.extract_from_frames(
+                    filtered_frames[:max_frames]
+                )
 
             processor.cleanup_frames(filtered_frames)
 

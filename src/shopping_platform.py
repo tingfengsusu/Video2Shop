@@ -98,7 +98,8 @@ class JdHandler(PlatformHandler):
         self.page = None
         self._logged_in = False
         self._launched_by_us = False  # 标记是否由本程序启动
-        self._launched_browser = None  # Playwright 启动的浏览器实例
+        self._launched_browser = None  # Playwright launch_persistent_context 返回值
+        self._launched_context = None  # 同上，语义别名
 
     # ── 查找 Chrome 可执行文件 ──────────────────────────────────────────
 
@@ -170,7 +171,6 @@ class JdHandler(PlatformHandler):
         """
         args = [
             f"--remote-debugging-port={self.debug_port}",
-            f"--user-data-dir={self.user_data_dir}",
             "--no-first-run",
             "--no-default-browser-check",
         ]
@@ -201,7 +201,10 @@ class JdHandler(PlatformHandler):
 
         logger.info("正在启动浏览器...")
         try:
-            self._launched_browser = self._pw.chromium.launch(**launch_kwargs)
+            self._launched_browser = self._pw.chromium.launch_persistent_context(
+                user_data_dir=self.user_data_dir,
+                **launch_kwargs,
+            )
             self._launched_by_us = True
             logger.info("浏览器已启动")
         except Exception as e:
@@ -244,25 +247,42 @@ class JdHandler(PlatformHandler):
         logger.info("未检测到运行中的调试浏览器，通过 Playwright 启动...")
         self._launch_chrome_debug()
 
-        # 直接使用 Playwright 启动的浏览器
-        self.browser = self._launched_browser
+        # launch_persistent_context 返回 BrowserContext，直接用
+        self._launched_context = self._launched_browser
         self._setup_page()
 
     def _setup_page(self):
-        """CDP 连接成功后设置页面引用。"""
-        contexts = self.browser.contexts
-        if not contexts:
-            self.page = self.browser.new_page()
-            logger.info("创建新页面")
-        else:
-            context = contexts[0]
+        """连接/启动浏览器后设置页面引用。
+
+        兼容两种返回类型:
+          - CDP 连接 → self.browser 是 Browser 对象
+          - launch_persistent_context → self._launched_context 是 BrowserContext 对象
+        """
+        if self._launched_context is not None:
+            # launch_persistent_context 返回的是 BrowserContext
+            context = self._launched_context
             pages = context.pages
             if pages:
                 self.page = pages[0]
                 logger.info(f"复用已有页面: {self.page.url}")
             else:
                 self.page = context.new_page()
-                logger.info("在已有 context 中创建新页面")
+                logger.info("创建新页面")
+        else:
+            # CDP 连接返回的是 Browser
+            contexts = self.browser.contexts
+            if not contexts:
+                self.page = self.browser.new_page()
+                logger.info("创建新页面")
+            else:
+                context = contexts[0]
+                pages = context.pages
+                if pages:
+                    self.page = pages[0]
+                    logger.info(f"复用已有页面: {self.page.url}")
+                else:
+                    self.page = context.new_page()
+                    logger.info("在已有 context 中创建新页面")
 
     # ── 登录 ────────────────────────────────────────────────────────────
 
@@ -640,6 +660,13 @@ class JdHandler(PlatformHandler):
             except Exception:
                 pass
 
+        # 关闭 persistent context（由 launch_persistent_context 创建）
+        if self._launched_context:
+            try:
+                self._launched_context.close()
+            except Exception:
+                pass
+
         # 断开 CDP / 关闭 Playwright 启动的浏览器
         if self.browser:
             try:
@@ -658,5 +685,6 @@ class JdHandler(PlatformHandler):
         self.page = None
         self._pw = None
         self._launched_browser = None
+        self._launched_context = None
         self._launched_by_us = False
         logger.info("连接已断开")

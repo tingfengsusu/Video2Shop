@@ -8,9 +8,10 @@
 deepseek:
   api_key: ""                               # 留空则从环境变量 DEEPSEEK_API_KEY 读取
   base_url: "https://api.deepseek.com"
-  model: "deepseek-chat"
+  model: "deepseek-v4-flash"
   max_tokens: 2000
   temperature: 0.1
+  analysis_mode: "api"                      # 配方提取方式: api (API直连) / web (网页版)
 
 # 视频处理配置
 video:
@@ -37,6 +38,7 @@ deepseek_web:
 # GUI 配置
 gui:
   log_level: "INFO"                         # 日志级别: DEBUG / INFO / WARNING / ERROR
+  startup_check: true                       # 启动时自动检查登录态 / API Key
 
 # Web 服务配置
 web:

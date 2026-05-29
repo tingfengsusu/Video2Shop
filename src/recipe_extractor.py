@@ -84,19 +84,12 @@ class RecipeExtractor:
             return os.getenv("DEEPSEEK_API_KEY", "")
 
     def _encode_image(self, image_path: Path) -> str:
-        """将图片编码为 base64 data URL。"""
+        """将图片编码为纯 base64 字符串（无前缀）。"""
         with open(image_path, "rb") as f:
-            img_data = base64.b64encode(f.read()).decode("utf-8")
-
-        # 检测图片格式
-        suffix = image_path.suffix.lower()
-        mime_map = {".jpg": "jpeg", ".jpeg": "jpeg", ".png": "png", ".webp": "webp"}
-        mime = mime_map.get(suffix, "jpeg")
-
-        return f"data:image/{mime};base64,{img_data}"
+            return base64.b64encode(f.read()).decode("utf-8")
 
     def _call_api(self, base64_image: str) -> Dict[str, Any]:
-        """调用 DeepSeek API，返回解析后的 JSON 结果。"""
+        """调用 DeepSeek API（V4 Flash 多模态格式），返回解析后的 JSON 结果。"""
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -107,13 +100,8 @@ class RecipeExtractor:
             "messages": [
                 {
                     "role": "user",
-                    "content": [
-                        {"type": "text", "text": EXTRACT_PROMPT},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": base64_image},
-                        },
-                    ],
+                    "content": EXTRACT_PROMPT,
+                    "image_data": base64_image,
                 }
             ],
             "max_tokens": self.max_tokens,

@@ -40,6 +40,8 @@ from typing import Optional
 
 import yaml
 
+from preflight import PreflightCheck, CheckStatus
+
 # ── ttkbootstrap 检测 ─────────────────────────────────────────────────────
 
 try:
@@ -71,13 +73,18 @@ CONFIG_PATH = WRITABLE_DIR / "config" / "config.yaml"
 DEFAULT_CONFIG_PATH = RESOURCES_DIR / "config" / "config.default.yaml"
 
 SECTION_LABELS = {
+    "deepseek": "DeepSeek API",
     "deepseek_web": "DeepSeek 网页版",
     "ocr": "OCR 设置",
     "shopping": "京东加购",
     "video": "视频处理",
+    "gui": "通用",
 }
 
 SETTINGS_FIELDS = [
+    ("deepseek.analysis_mode", "配方提取方式", "choice",
+     {"choices": ["api", "web"]}),
+    ("deepseek.api_key", "API Key", "str", {}),
     ("deepseek_web.timeout_seconds", "回复超时(秒)", "int",
      {"from": 30, "to": 600}),
     ("deepseek_web.batch_size", "每批图片数", "int",
@@ -100,6 +107,7 @@ SETTINGS_FIELDS = [
      {"from": 1, "to": 30}),
     ("video.max_frames", "最大抽帧数", "int",
      {"from": 3, "to": 50}),
+    ("gui.startup_check", "启动时自动检查", "bool", {}),
 ]
 
 # ── 工具函数 ──────────────────────────────────────────────────────────────
@@ -365,7 +373,11 @@ class SettingsDialog(tk.Toplevel):
                     self._widgets[key] = (ftype, var)
                 else:  # str
                     var = tk.StringVar()
-                    ttk.Entry(self._form, textvariable=var, width=28).grid(
+                    is_key = "key" in label.lower()
+                    entry_kw = {"textvariable": var, "width": 28}
+                    if is_key:
+                        entry_kw["show"] = "*"
+                    ttk.Entry(self._form, **entry_kw).grid(
                         row=row, column=1, sticky="w", pady=4)
                     self._widgets[key] = ("str", var)
                 row += 1
@@ -550,6 +562,11 @@ class ModernApp:
 
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
+        # 启动时自动检查（可在设置中关闭）
+        cfg = _read_config()
+        if cfg.get("gui", {}).get("startup_check", True):
+            self.root.after(500, self._run_preflight)
+
     # ── 侧边栏 ────────────────────────────────────────────────────────
 
     def _build_sidebar(self):
@@ -606,7 +623,12 @@ class ModernApp:
         self.btn_stop.pack(side="left", fill="x", expand=True)
         self.btn_stop.configure(state="disabled")
 
-        # 设置按钮
+        # 准备工作 + 设置按钮
+        self._preflight_btn = ttk.Button(
+            sidebar, text="🔧 准备工作",
+            command=self._run_preflight)
+        self._preflight_btn.pack(fill="x", pady=(0, 6))
+
         if HAS_TTKB:
             ttk.Button(sidebar, text="⚙ 设置", bootstyle="secondary",
                        command=self._open_settings).pack(
@@ -981,6 +1003,39 @@ class ModernApp:
 
     def _open_settings(self):
         SettingsDialog(self.root)
+
+    def _run_preflight(self):
+        """手动触发启动前检查。"""
+        self._preflight_btn.configure(state="disabled")
+        self._append_log_ui("🔧 启动检查中...")
+        self.status_var.set("● 正在检查...")
+
+        def _worker():
+            from preflight import run_preflight
+            def cb(name, status, detail):
+                icon = {"ok": "✓", "missing": "⚠", "failed": "✗", "skipped": "—"}
+                self.root.after(0, self._append_log_ui,
+                                f"  {icon.get(status.value, '?')} {name}: {detail}")
+            results = run_preflight(
+                config_path=str(CONFIG_PATH),
+                status_callback=cb,
+            )
+            ok_count = sum(1 for s in results.values() if s == CheckStatus.OK)
+            total = len(results)
+            self.root.after(0, self._on_preflight_done, ok_count, total)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_preflight_done(self, ok: int, total: int):
+        self._preflight_btn.configure(state="normal")
+        self.status_var.set("● 就绪")
+        if ok == total:
+            self._append_log_ui(f"✓ 准备工作完成 ({ok}/{total})，可以开始使用")
+        else:
+            self._append_log_ui(
+                f"⚠ 准备工作完成 ({ok}/{total})，"
+                "缺少的项已打开浏览器，请在浏览器窗口中完成登录"
+            )
 
     # ── 关闭 ──────────────────────────────────────────────────────────
 

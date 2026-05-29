@@ -141,6 +141,23 @@
 </div>
 
 <div class="card">
+    <h2>DeepSeek API</h2>
+    <div class="form-group">
+        <label>配方提取方式</label>
+        <select id="deepseek.analysis_mode">
+            <option value="api">API (直连)</option>
+            <option value="web">网页版 (浏览器)</option>
+        </select>
+        <span class="hint">选择通过 API 或网页版分析图片</span>
+    </div>
+    <div class="form-group">
+        <label>API Key</label>
+        <input type="password" id="deepseek.api_key" placeholder="留空则从环境变量 DEEPSEEK_API_KEY 读取">
+        <span class="hint">在 platform.deepseek.com 注册获取</span>
+    </div>
+</div>
+
+<div class="card">
     <h2>DeepSeek 网页版</h2>
     <div class="form-group">
         <label>回复超时 (秒)</label>
@@ -219,6 +236,15 @@
     </div>
 </div>
 
+<div class="card">
+    <h2>通用</h2>
+    <div class="form-group">
+        <label>启动时自动检查</label>
+        <input type="checkbox" id="gui.startup_check">
+        <span class="hint">启动程序时自动检查登录态和 API Key</span>
+    </div>
+</div>
+
 <div class="actions">
     <button class="btn btn-warn" onclick="resetConfig()">恢复默认</button>
     <button class="btn btn-primary" onclick="saveConfig()">保存</button>
@@ -241,6 +267,8 @@ async function loadConfig() {
 
 function populateForm(cfg) {
     const keys = [
+        "deepseek.analysis_mode",
+        "deepseek.api_key",
         "deepseek_web.timeout_seconds",
         "deepseek_web.batch_size",
         "deepseek_web.headless",
@@ -253,6 +281,7 @@ function populateForm(cfg) {
         "shopping.retry_on_failure",
         "video.frame_interval",
         "video.max_frames",
+        "gui.startup_check",
     ];
 
     keys.forEach(key => {
@@ -289,6 +318,7 @@ function collectForm() {
         "shopping.retry_on_failure",
         "video.frame_interval",
         "video.max_frames",
+        "gui.startup_check",
     ];
 
     const data = {};

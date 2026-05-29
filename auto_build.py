@@ -46,6 +46,7 @@ HIDDEN_IMPORTS = [
     "pipeline", "video_processor", "deepseek_web_analyzer",
     "shopping_platform", "web_interface", "recipe_extractor",
     "bili_downloader", "ttkbootstrap", "version",
+    "preflight",
 ]
 
 # Only collect-all for ttkbootstrap (themes are small).
@@ -55,6 +56,7 @@ COLLECT_ALL = ["ttkbootstrap"]
 EXCLUDE_MODULES = [
     "flask", "jinja2", "werkzeug", "markupsafe",
     "itsdangerous", "blinker", "click",
+    "torch", "torchvision", "torchaudio",
 ]
 
 # --add-data pairs: (source, dest)
@@ -333,6 +335,61 @@ def verify_output() -> bool:
     return True
 
 
+def bundle_torch():
+    """将 torch 和 easyocr 复制到打包输出目录，用户无需手动 pip install。"""
+    print_header("Bundling torch & easyocr")
+
+    import site
+
+    internal = DIST_DIR / "_internal"
+    if not internal.exists():
+        print_warn("_internal dir not found, skipping")
+        return
+
+    # 找到真正的 site-packages（查找所有候选路径）
+    site_packages = None
+    for sp in site.getsitepackages():
+        sp = Path(sp)
+        if (sp / "torch").exists() or (sp / "Lib" / "site-packages" / "torch").exists():
+            site_packages = sp
+            break
+    if site_packages is None:
+        # 回退：直接用 importlib 定位 torch
+        try:
+            import torch
+            site_packages = Path(torch.__file__).parent.parent
+        except ImportError:
+            print_warn("无法定位 torch 路径，跳过")
+            return
+
+    bundled = 0
+    for pkg_name in ("torch", "torchvision", "easyocr"):
+        src = site_packages / pkg_name
+        if not src.exists():
+            # 尝试 Lib/site-packages 子目录
+            alt = site_packages / "Lib" / "site-packages" / pkg_name
+            if alt.exists():
+                src = alt
+            else:
+                print_warn(f"{pkg_name} not found, skipping")
+                continue
+        dst = internal / pkg_name
+        if dst.exists():
+            shutil.rmtree(dst, ignore_errors=True)
+        shutil.copytree(src, dst, ignore=shutil.ignore_patterns(
+            "__pycache__", "*.pyc", ".git",
+            # 排除 torch 中不需要的海量子模块
+            "test", "tests", "testing", "benchmarks",
+            "include", "share",
+        ))
+        size_mb = dir_size(dst) / 1024 / 1024
+        print_ok(f"{pkg_name} → _internal/{pkg_name} ({size_mb:.0f} MB)")
+        bundled += 1
+
+    if bundled:
+        print_info(f"已打包 {bundled} 个包，用户无需 pip install torch")
+
+
 def zip_dist(version: str) -> bool:
     print_header("Creating distribution zip")
     dest_name = f"Video2Shop_v{version}.zip"
@@ -444,6 +501,8 @@ def main():
         print_failure()
         confirm_exit()
         sys.exit(1)
+
+    bundle_torch()
 
     zip_dist(version)
 

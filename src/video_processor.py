@@ -44,7 +44,13 @@ class VideoProcessor:
 
     def _get_ocr_reader(self):
         if self._ocr_reader is None:
-            import easyocr
+            try:
+                import easyocr
+            except ImportError:
+                raise ImportError(
+                    "缺少 OCR 识别组件，程序安装可能不完整。\n"
+                    "请重新运行 auto_build.py 构建，或手动: pip install torch easyocr"
+                )
 
             logger.info("正在加载 easyocr 中文模型（首次运行会下载约 100MB）...")
             self._ocr_reader = easyocr.Reader(self.ocr_languages, gpu=False)
