@@ -15,13 +15,14 @@
 ## ✨ 功能特性
 
 - 🎥 **智能视频分析** — 输入 B站视频链接，自动下载 → 关键帧抽取 → OCR 文字筛选
-- 🤖 **AI 配方提取** — 多帧图片上传 DeepSeek，提取完整食材清单和工具列表
+- 🤖 **双模式 AI 配方提取** — 支持 DeepSeek API (V4 Flash) 直连 + 网页版两种模式，设置中一键切换
+- 🔧 **启动前自动检查** — 自动打开浏览器引导登录京东/DeepSeek，扫码即可完成，无需手动操作
 - ✅ **已有物品勾选** — 可视化复选框界面，标记你已拥有的物品
-- 🛒 **一键京东加购** — 播放器 CDP 连接复用登录态，自动搜索自营商品并加入购物车
+- 🛒 **一键京东加购** — 程序自动启动 Chrome 保持登录态，自动搜索自营商品并加入购物车
 - 🖥️ **三种使用方式** — 命令行 / 桌面 GUI / Web 前端，共享同一套后端管道
 - ⚙️ **在线配置** — GUI 内置设置面板，修改即时生效，无需手动编辑 YAML
-- 📦 **开箱即用** — 内置 ffmpeg，解压即用，无需安装任何系统依赖
-- 🚀 **首次自动初始化** — EasyOCR 模型首次运行时自动下载（~100MB），后续启动无需等待
+- 📦 **开箱即用** — 内置 ffmpeg + PyTorch + EasyOCR，解压即用，无需安装任何依赖
+- 🚀 **快速构建** — auto_build.py 一键打包 (~2.5 分钟)，自动下载 UPX 压缩
 
 ---
 
@@ -71,7 +72,9 @@ python src/gui.py                     # 桌面 GUI
 
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
-| `shopping.chrome_browser_type` | 浏览器类型 | `Google Chrome` |
+| `deepseek.analysis_mode` | 配方提取方式 | `api` |
+| `deepseek.api_key` | DeepSeek API Key | (空) |
+| `deepseek.model` | API 模型 | `deepseek-v4-flash` |
 | `shopping.chrome_path` | 自定义浏览器路径 | (空) |
 | `shopping.add_cart_delay` | 加购后延迟(秒) | `0.5` |
 | `shopping.click_retry` | 加购按钮点击重试 | `1` |
@@ -80,6 +83,7 @@ python src/gui.py                     # 桌面 GUI
 | `ocr.min_chinese_chars` | 最少中文字符数 | `25` |
 | `deepseek_web.timeout_seconds` | AI 回复超时(秒) | `120` |
 | `deepseek_web.batch_size` | 每批上传图片数 | `5` |
+| `gui.startup_check` | 启动时自动检查 | `true` |
 | `gui.log_level` | GUI 日志级别 | `INFO` |
 
 完整配置项请查看 [`config/config.default.yaml`](config/config.default.yaml)。
@@ -97,10 +101,11 @@ Video2Shop/
 │   ├── pipeline.py                # Shared backend pipeline
 │   ├── video_processor.py         # Video download + frame extraction + OCR
 │   ├── deepseek_web_analyzer.py   # DeepSeek web multi-image analysis
-│   ├── recipe_extractor.py        # DeepSeek API text recipe extraction
-│   ├── shopping_platform.py       # JD shopping cart automation (Playwright CDP)
+│   ├── recipe_extractor.py        # DeepSeek API recipe extraction (V4 Flash)
+│   ├── shopping_platform.py       # JD shopping cart automation (Playwright)
 │   ├── web_interface.py           # Web recipe display + cart interface
 │   ├── bili_downloader.py         # Bilibili video downloader (durl + DASH/ffmpeg)
+│   ├── preflight.py               # Startup auth check + browser-guided login
 │   └── utils.py                   # Shared utilities (ffmpeg path resolver)
 ├── config/                        # Configuration files
 │   ├── config.default.yaml        # Default config template
@@ -144,10 +149,10 @@ python auto_build.py
 | 步骤 | 说明 |
 |------|------|
 | `--onedir` | 生成 `dist/Video2Shop/` 文件夹，启动无需解压 |
-| UPX 压缩 | 自动检测 `upx.exe`（PATH 或 `tools/`），有则启用 |
-| EasyOCR 模型 | **不打包**（~200MB），首次运行时自动下载到 `~/.EasyOCR/` |
-| ffmpeg | 通过 `--add-data` 打包到 `tools/`，冻结后用 `get_ffmpeg_path()` 定位 |
-| 排除项 | 排除 flask/jinja2/werkzeug 等 Web 依赖，减少体积 |
+| UPX 压缩 | 自动检测/下载 `upx.exe`，有则启用 |
+| PyTorch + EasyOCR | **构建后复制**到 `_internal/`，无需用户 pip install |
+| ffmpeg | 通过 `--add-data` 打包到 `tools/` |
+| 排除项 | 排除 flask/jinja2/torch 等，避免 PyInstaller 分析慢 |
 | 输出 | `dist/Video2Shop/` → 自动打包为 `Video2Shop_v{x.y.z}.zip` |
 
 ### 构建安装包（Inno Setup）
@@ -185,10 +190,24 @@ python auto_build.py
 </details>
 
 <details>
+<summary><b>Q: 启动时弹出浏览器窗口？</b></summary>
+
+这是「准备工作」功能，程序会自动打开 Chrome 检查京东和 DeepSeek 登录态。如果未登录，在浏览器窗口中扫码登录即可，cookie 会自动保存。可以在设置中关闭「启动时自动检查」。
+</details>
+
+<details>
+<summary><b>Q: API 和网页版分析有什么区别？</b></summary>
+
+- **API 模式**：使用 DeepSeek V4 Flash 多模态 API 直接上传图片分析，速度快但需要 API Key
+- **网页版模式**：通过浏览器上传图片到 chat.deepseek.com，需要登录 DeepSeek 账号，免费使用
+
+在设置页面可以随时切换。
+</details>
+
+<details>
 <summary><b>Q: DeepSeek 网页版需要登录？</b></summary>
 
-首次运行时会弹出浏览器窗口，请在窗口中扫码或账号登录 DeepSeek。登录态会缓存到 `config/deepseek_auth.json`，后续无需重复登录。
-</details>
+是的。点击「准备工作」按钮，程序会打开浏览器导航到 DeepSeek 聊天页面，在浏览器中扫码或账号登录即可。登录态会保存到 `config/deepseek_auth.json`，后续无需重复登录。
 
 <details>
 <summary><b>Q: 首次启动很慢？</b></summary>
