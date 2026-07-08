@@ -5,9 +5,15 @@
 从 B站美食/手工视频中自动提取配方（食材 + 工具），勾选已有物品后在京东一键加购缺失的部分。
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="截图" width="800">
+  <img src="docs/p1.png" alt="GUI主界面" width="800">
   <br>
-  <em>↑ 演示截图 — 替换为实际截图</em>
+  <em>↑ GUI 主界面 — 输入B站链接，一键提取配方</em>
+</p>
+
+<p align="center">
+  <img src="docs/p2.png" alt="配方结果展示" width="800">
+  <br>
+  <em>↑ 配方结果 — 食材与工具清单，勾选已有物品后一键加购</em>
 </p>
 
 ---
